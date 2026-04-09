@@ -94,7 +94,7 @@ def find_pip_configs() -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True, help="Path to output JSON file")
-    parser.add_argument("--test-package", default="", help="Optional package name for pip dry-run test")
+    parser.add_argument("--test-package", default="pip", help="Optional package name for pip dry-run test")
     args = parser.parse_args()
 
     env_keys = [

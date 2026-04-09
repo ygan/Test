@@ -132,3 +132,8 @@ python -m pip download packaging --no-deps --use-feature=truststore -v
 
 然后把最后一条命令的结果告诉我：
 是成功下载了，还是还报 `CERTIFICATE_VERIFY_FAILED`。
+
+
+export PIP_CERT=/etc/ssl/certs/ca-certificates.crt
+export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+pip install --cert /etc/ssl/certs/ca-certificates.crt openai

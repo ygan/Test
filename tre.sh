@@ -21,3 +21,38 @@ llamafactory-cli train examples/train_lora/qwen3_lora_sft.yaml
 
 # test gpu
 # srun -p interruptible_gpu --gres gpu --constraint a40 --pty /bin/bash -l
+
+
+
+
+
+#!/bin/bash
+#SBATCH --job-name=probe_tre_paths
+#SBATCH --output=/job_scratch/%x.out
+#SBATCH --error=/job_scratch/%x.err
+#SBATCH --partition=cpu
+#SBATCH --time=00:05:00
+
+set -e
+
+echo "host=$(hostname)"
+id
+
+echo "--- mount probes ---"
+findmnt /project || true
+findmnt /storage || true
+df -h /project || true
+df -h /storage || true
+
+echo "--- path probes ---"
+for p in \
+  /project \
+  /project/LLMs \
+  /project/LLMs/Qwen2.5-0.5B-Instruct \
+  /storage/project \
+  /storage/project/LLMs \
+  /storage/project/LLMs/Qwen2.5-0.5B-Instruct
+do
+  echo "== $p =="
+  ls -ld "$p" || true
+done

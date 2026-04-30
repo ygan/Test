@@ -1,14 +1,27 @@
+from pathlib import Path
 from huggingface_hub import snapshot_download
 
-model_id = "Qwen/Qwen2.5-7B-Instruct"
-cache_dir = "/project/models/"
+def download_model_all(
+    model_id: str,
+    base_dir: str = "~/models",
+    revision: str = "main",
+    token: bool = True,
+    force_download: bool = False,
+):
+    model_name = model_id.split("/")[-1]
+    local_dir = Path(base_dir) / model_name
 
-local_path = snapshot_download(
-    repo_id=model_id,
-    cache_dir=cache_dir,
-    local_dir=f"{cache_dir.rstrip('/')}/Qwen2.5-7B-Instruct",
-    local_dir_use_symlinks=False,
-    resume_download=True,
-)
+    local_path = snapshot_download(
+        repo_id=model_id,
+        revision=revision,
+        local_dir=str(local_dir),
+        token=token,
+        force_download=force_download,
+        max_workers=8,
+    )
 
-print(f"Model downloaded to: {local_path}")
+    print(f"Model downloaded to: {local_path}")
+    return local_path
+
+
+download_model_all("google/gemma-3-4b-it")

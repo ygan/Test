@@ -9,7 +9,7 @@ def download_model_all(
     force_download: bool = False,
 ):
     model_name = model_id.split("/")[-1]
-    local_dir = Path(base_dir) / model_name
+    local_dir = Path(base_dir).expanduser() / model_name
 
     local_path = snapshot_download(
         repo_id=model_id,

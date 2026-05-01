@@ -100,6 +100,9 @@ nvidia-smi
 
 echo "Starting vLLM for Qwen2.5..."
 
+export VLLM_USE_DEEP_GEMM=0
+PORT="${PORT:-8000}"
+
 vllm serve "$MODEL_PATH" \
   --served-model-name qwen2.5 \
   --trust-remote-code \
@@ -120,16 +123,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
+AUTH_ARGS=()
+if [ -n "${VLLM_API_KEY:-}" ]; then
+  AUTH_ARGS=(-H "Authorization: Bearer ${VLLM_API_KEY}")
+fi
+
 echo "Waiting for vLLM to become ready..."
 
 READY=0
 for i in $(seq 1 120); do
-  if curl -sf "http://127.0.0.1:${PORT}/v1/models" > /tmp/vllm_models.json; then
+  HTTP_CODE=$(curl -sS -m 10 \
+    -o /tmp/vllm_models.json \
+    -w "%{http_code}" \
+    "${AUTH_ARGS[@]}" \
+    "http://127.0.0.1:${PORT}/v1/models" || echo "000")
+
+  if [ "$HTTP_CODE" = "200" ]; then
     echo "vLLM is ready."
     cat /tmp/vllm_models.json
     READY=1
     break
   fi
+
+  echo "Still waiting... attempt $i, HTTP_CODE=$HTTP_CODE"
+  cat /tmp/vllm_models.json 2>/dev/null || true
+  echo
 
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     echo "vLLM process exited before becoming ready."
@@ -137,7 +155,6 @@ for i in $(seq 1 120); do
     exit 1
   fi
 
-  echo "Still waiting... attempt $i"
   sleep 10
 done
 
@@ -145,9 +162,6 @@ if [ "$READY" -ne 1 ]; then
   echo "vLLM did not become ready in time."
   exit 1
 fi
-
-echo
-echo "Sending test request..."
 
 curl -s "http://127.0.0.1:${PORT}/v1/chat/completions" \
   -H "Content-Type: application/json" \

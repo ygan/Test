@@ -1,58 +1,81 @@
-#!/bin/bash
-#SBATCH --job-name=hello_tre_gpu
-#SBATCH --output=/job_scratch/%x.out
-#SBATCH --error=/job_scratch/%x.error.out
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
-#SBATCH --time=01:00:00
+set -euo pipefail
 
-module load cuda
+source ~/venvs/dsv4-vllm/bin/activate
 
-nvidia-smi
-llamafactory-cli train examples/train_lora/qwen3_lora_sft.yaml
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+export MODEL_PATH=/dataset/models/DeepSeek-V4-Flash
+export PORT=8000
 
+export VLLM_ENGINE_READY_TIMEOUT_S=3600
+export VLLM_RPC_TIMEOUT=600000
+export TILELANG_CLEANUP_TEMP_FILES=1
+export VLLM_DISABLE_COMPILE_CACHE=1
 
+echo "Running on node: $(hostname)"
+echo "Starting vLLM..."
 
-# normal 
-# sbatch -p gpu hellogpu.sh
+vllm serve "$MODEL_PATH" \
+  --served-model-name deepseek-v4-flash \
+  --trust-remote-code \
+  --kv-cache-dtype fp8 \
+  --block-size 256 \
+  --data-parallel-size 4 \
+  --enable-expert-parallel \
+  --tokenizer-mode deepseek_v4 \
+  --reasoning-parser deepseek_v4 \
+  --max-model-len 32768 \
+  --max-num-batched-tokens 8192 \
+  --max-num-seqs 8 \
+  --enforce-eager \
+  --no-disable-hybrid-kv-cache-manager \
+  --host 127.0.0.1 \
+  --port "$PORT" &
 
+SERVER_PID=$!
+echo "vLLM PID: $SERVER_PID"
 
-# test gpu
-# srun -p interruptible_gpu --gres gpu --constraint a40 --pty /bin/bash -l
+cleanup() {
+  echo "Cleaning up vLLM server..."
+  kill "$SERVER_PID" 2>/dev/null || true
+  wait "$SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
 
+echo "Waiting for vLLM to become ready..."
 
+READY=0
+for i in $(seq 1 180); do
+  if curl -sf "http://127.0.0.1:${PORT}/v1/models" > /tmp/vllm_models.json; then
+    echo "vLLM is ready."
+    cat /tmp/vllm_models.json
+    READY=1
+    break
+  fi
 
-
-
-#!/bin/bash
-#SBATCH --job-name=probe_tre_paths
-#SBATCH --output=/job_scratch/%x.out
-#SBATCH --error=/job_scratch/%x.err
-#SBATCH --partition=cpu
-#SBATCH --time=00:05:00
-
-set -e
-
-echo "host=$(hostname)"
-id
-
-echo "--- mount probes ---"
-findmnt /project || true
-findmnt /storage || true
-df -h /project || true
-df -h /storage || true
-
-echo "--- path probes ---"
-for p in \
-  /project \
-  /project/LLMs \
-  /project/LLMs/Qwen2.5-0.5B-Instruct \
-  /storage/project \
-  /storage/project/LLMs \
-  /storage/project/LLMs/Qwen2.5-0.5B-Instruct
-do
-  echo "== $p =="
-  ls -ld "$p" || true
+  echo "Still waiting... attempt $i"
+  sleep 20
 done
+
+if [ "$READY" -ne 1 ]; then
+  echo "vLLM did not become ready in time."
+  echo "Check the HPC job output/error file for vLLM logs."
+  exit 1
+fi
+
+echo
+echo "Sending test request..."
+
+curl -s "http://127.0.0.1:${PORT}/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "deepseek-v4-flash",
+    "messages": [
+      {"role": "user", "content": "What is 17*19? Return only the integer."}
+    ],
+    "temperature": 0.0,
+    "max_tokens": 64
+  }' | tee /tmp/vllm_test_response.json
+
+echo
+echo "Test response saved to /tmp/vllm_test_response.json"
+echo "Done."

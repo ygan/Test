@@ -101,6 +101,9 @@ nvidia-smi
 echo "Starting vLLM for Qwen2.5..."
 
 export VLLM_USE_DEEP_GEMM=0
+export NO_PROXY="127.0.0.1,localhost,::1"
+export no_proxy="127.0.0.1,localhost,::1"
+
 PORT="${PORT:-8000}"
 
 vllm serve "$MODEL_PATH" \
@@ -132,7 +135,7 @@ echo "Waiting for vLLM to become ready..."
 
 READY=0
 for i in $(seq 1 120); do
-  HTTP_CODE=$(curl -sS -m 10 \
+  HTTP_CODE=$(curl --noproxy "*" -sS -m 10 \
     -o /tmp/vllm_models.json \
     -w "%{http_code}" \
     "${AUTH_ARGS[@]}" \
@@ -163,7 +166,11 @@ if [ "$READY" -ne 1 ]; then
   exit 1
 fi
 
-curl -s "http://127.0.0.1:${PORT}/v1/chat/completions" \
+echo
+echo "Sending test request..."
+
+curl --noproxy "*" -sS "http://127.0.0.1:${PORT}/v1/chat/completions" \
+  "${AUTH_ARGS[@]}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "qwen2.5",

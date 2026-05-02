@@ -238,6 +238,7 @@ COMMON_ARGS=(
   --block-size 256
   --tokenizer-mode deepseek_v4
   --reasoning-parser deepseek_v4
+  --load-format safetensors
   --max-model-len "$MAX_MODEL_LEN"
   --max-num-batched-tokens "$MAX_NUM_BATCHED_TOKENS"
   --max-num-seqs "$MAX_NUM_SEQS"
@@ -327,11 +328,11 @@ for i in $(seq 1 360); do
     exit 1
   fi
 
-  if (( i % 6 == 0 )); then
+  if (( i % 12 == 0 )); then
     echo "Still waiting... attempt $i, HTTP_CODE=$HTTP_CODE"
-    echo "===== last 60 lines of vLLM log ====="
-    tail -n 60 "$LOG_FILE" || true
-    echo "======================================"
+    echo "vLLM is still alive. Log file: $LOG_FILE"
+    echo "GPU snapshot:"
+    nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv,noheader || true
   else
     echo "Still waiting... attempt $i, HTTP_CODE=$HTTP_CODE"
   fi
@@ -469,6 +470,169 @@ curl --noproxy "*" -sS "http://127.0.0.1:${PORT}/v1/chat/completions" \
     "repetition_penalty": 1.05,
     "max_tokens": 64
   }' | tee /tmp/qwen25_test_response.json
+
+echo
+echo "Done."
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Running on node: $(hostname)"
+echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"
+nvidia-smi || true
+
+
+MODEL_PATH="${MODEL_PATH:-~/DeepSeek-V4-Flash-Int4}"
+
+
+PORT="${PORT:-8000}"
+HOST="${HOST:-127.0.0.1}"
+MODEL_NAME="${MODEL_NAME:-ds}"
+DEVICE="${DEVICE:-cuda}"
+MOE_DEVICE="${MOE_DEVICE:-cuda}"
+
+# 对原始 FP16/BF16 模型可设 DTYPE=int4/int8/fp8/float16；
+# 如果 MODEL_PATH 已经是 ftllm export 出来的量化模型，可以设 DTYPE=""。
+DTYPE="${DTYPE:-int4}"
+
+# 可选：CPU 线程数。空则不传 -t。
+THREADS="${THREADS:-}"
+
+export NO_PROXY="127.0.0.1,localhost,::1"
+export no_proxy="127.0.0.1,localhost,::1"
+
+echo "Starting FastLLM server..."
+echo "MODEL_PATH=${MODEL_PATH}"
+echo "MODEL_NAME=${MODEL_NAME}"
+echo "HOST=${HOST}"
+echo "PORT=${PORT}"
+echo "DEVICE=${DEVICE}"
+echo "DTYPE=${DTYPE:-<not set>}"
+echo "THREADS=${THREADS:-<not set>}"
+
+SERVER_ARGS=(
+  ftllm server "$MODEL_PATH"
+  --model_name "$MODEL_NAME"
+  --port "$PORT"
+  --device "$DEVICE"
+  --moe_device "$MOE_DEVICE"
+)
+
+if [ -n "$DTYPE" ]; then
+  SERVER_ARGS+=(--dtype "$DTYPE")
+fi
+
+if [ -n "$THREADS" ]; then
+  SERVER_ARGS+=(-t "$THREADS")
+fi
+
+if [ -n "${FTLLM_API_KEY:-}" ]; then
+  SERVER_ARGS+=(--api_key "$FTLLM_API_KEY")
+fi
+
+# 也可以外部追加参数，例如:
+# export FTLLM_EXTRA_ARGS="--moe_device cpu --kv_cache_limit 20G"
+if [ -n "${FTLLM_EXTRA_ARGS:-}" ]; then
+  # shellcheck disable=SC2206
+  EXTRA_ARGS_ARRAY=($FTLLM_EXTRA_ARGS)
+  SERVER_ARGS+=("${EXTRA_ARGS_ARRAY[@]}")
+fi
+
+echo "Command: ${SERVER_ARGS[*]}"
+"${SERVER_ARGS[@]}" &
+
+SERVER_PID=$!
+echo "FastLLM PID: $SERVER_PID"
+
+cleanup() {
+  echo "Cleaning up FastLLM server..."
+  kill "$SERVER_PID" 2>/dev/null || true
+  wait "$SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+AUTH_ARGS=()
+if [ -n "${FTLLM_API_KEY:-}" ]; then
+  AUTH_ARGS=(-H "Authorization: Bearer ${FTLLM_API_KEY}")
+fi
+
+echo "Waiting for FastLLM to become ready..."
+
+READY=0
+for i in $(seq 1 120); do
+  HTTP_CODE=$(curl --noproxy "*" -sS -m 10 \
+    -o /tmp/ftllm_models.json \
+    -w "%{http_code}" \
+    "${AUTH_ARGS[@]}" \
+    "http://${HOST}:${PORT}/v1/models" || echo "000")
+
+  if [ "$HTTP_CODE" = "200" ]; then
+    echo "FastLLM is ready."
+    cat /tmp/ftllm_models.json
+    READY=1
+    break
+  fi
+
+  echo "Still waiting... attempt $i, HTTP_CODE=$HTTP_CODE"
+  cat /tmp/ftllm_models.json 2>/dev/null || true
+  echo
+
+  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+    echo "FastLLM process exited before becoming ready."
+    wait "$SERVER_PID" || true
+    exit 1
+  fi
+
+  sleep 10
+done
+
+if [ "$READY" -ne 1 ]; then
+  echo "FastLLM did not become ready in time."
+  exit 1
+fi
+
+echo
+echo "Sending test request..."
+
+HTTP_CODE=$(curl --noproxy "*" -sS -m 120 \
+  -o /tmp/qwen25_ftllm_test_response.json \
+  -w "%{http_code}" \
+  "http://${HOST}:${PORT}/v1/chat/completions" \
+  "${AUTH_ARGS[@]}" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"model\": \"${MODEL_NAME}\",
+    \"messages\": [
+      {\"role\": \"system\", \"content\": \"You are a helpful assistant.\"},
+      {\"role\": \"user\", \"content\": \"What is 17*19? Return only the integer.\"}
+    ],
+    \"temperature\": 0.0,
+    \"top_p\": 0.8,
+    \"repetition_penalty\": 1.05,
+    \"max_tokens\": 64
+  }" || echo "000")
+
+cat /tmp/qwen25_ftllm_test_response.json
+echo
+
+if [ "$HTTP_CODE" != "200" ]; then
+  echo "Test request failed, HTTP_CODE=$HTTP_CODE"
+  exit 1
+fi
 
 echo
 echo "Done."

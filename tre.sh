@@ -674,3 +674,16 @@ python your_script.py
 
 singularity exec /software/containers/singularity/epile/epile.sif python --version
 VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0 vllm serve /home/3059733@eeecs.qub.ac.uk/models/Qwen3.6-27B-FP8   --served-model-name qwen3.6   --trust-remote-code   --dtype auto   --max-model-len 256   --gpu-memory-utilization 0.95   --kv-cache-dtype fp8   --max-num-seqs 1   --max-num-batched-tokens 256   --limit-mm-per-prompt '{"image":0,"video":0}'   --language-model-only   --reasoning-parser qwen3   --default-chat-template-kwargs '{"enable_thinking": false}'   --attention-backend TRITON_ATTN    --host 127.0.0.1   --port 8000   2>&1 | tee vllm-test-startup.log
+
+
+python - <<PY
+import os, sys
+print("python", sys.executable)
+print("TMPDIR", os.environ.get("TMPDIR"))
+print("TRITON_CACHE_DIR", os.environ.get("TRITON_CACHE_DIR"))
+import torch, triton
+print("torch", torch.__version__)
+print("cuda available", torch.cuda.is_available())
+print("cuda count", torch.cuda.device_count())
+print("triton", triton.__version__)
+PY

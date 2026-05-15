@@ -681,19 +681,21 @@ VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0 vllm se
 
 
 
+set -Eeuo pipefail
+
 SCRATCH_BASE="${SLURM_TMPDIR:-${TMPDIR:-$HOME/job_scratch}}"
 RUN_ID="${SLURM_JOB_ID:-manual}_$$"
 RUN_DIR="${SCRATCH_BASE}/${USER:-user}_vllm_dsv4_${RUN_ID}"
 
 mkdir -p "$RUN_DIR"/{tmp,rpc,cache,triton,torchinductor,cuda_cache,deep_gemm}
 
+export RUN_DIR
 export TMPDIR="$RUN_DIR/tmp"
 export TMP="$TMPDIR"
 export TEMP="$TMPDIR"
 
 export VLLM_RPC_BASE_PATH="$RUN_DIR/rpc"
 export VLLM_CACHE_ROOT="$RUN_DIR/cache"
-
 export XDG_CACHE_HOME="$RUN_DIR/cache"
 export TRITON_CACHE_DIR="$RUN_DIR/triton"
 export TORCHINDUCTOR_CACHE_DIR="$RUN_DIR/torchinductor"
@@ -705,58 +707,7 @@ export LD_LIBRARY_PATH="/.singularity.d/libs:${LD_LIBRARY_PATH:-}"
 echo "RUN_DIR=$RUN_DIR"
 echo "TMPDIR=$TMPDIR"
 echo "TRITON_CACHE_DIR=$TRITON_CACHE_DIR"
-echo "TORCHINDUCTOR_CACHE_DIR=$TORCHINDUCTOR_CACHE_DIR"
-echo "CUDA_CACHE_PATH=$CUDA_CACHE_PATH"
-echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
-cat > /tmp/triton_jit_test.py <<'PY'
-import os
-import torch
-import triton
-import triton.language as tl
 
-print("TMPDIR =", os.environ.get("TMPDIR"))
-print("TRITON_CACHE_DIR =", os.environ.get("TRITON_CACHE_DIR"))
-print("TORCHINDUCTOR_CACHE_DIR =", os.environ.get("TORCHINDUCTOR_CACHE_DIR"))
-print("cuda available =", torch.cuda.is_available())
-print("cuda count =", torch.cuda.device_count())
-
-@triton.jit
-def add_kernel(x, y, out, n: tl.constexpr):
-    pid = tl.program_id(0)
-    offs = pid * 1024 + tl.arange(0, 1024)
-    mask = offs < n
-    tl.store(out + offs, tl.load(x + offs, mask=mask) + tl.load(y + offs, mask=mask), mask=mask)
-
-n = 1024
-x = torch.ones(n, device="cuda")
-y = torch.ones(n, device="cuda")
-out = torch.empty_like(x)
-
-add_kernel[(1,)](x, y, out, n)
-torch.cuda.synchronize()
-
-print(out[:3])
-print("TRITON JIT OK")
-PY
-
-python /tmp/triton_jit_test.py
-
-
-
-echo "===== debug libcuda / gcc link ====="
-echo "RUN_DIR=$RUN_DIR"
-echo "CUDA_HOME=${CUDA_HOME:-}"
-echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
-
-echo
-echo "===== libcuda files ====="
-ls -l /.singularity.d/libs/libcuda.so* || true
-readlink -f /.singularity.d/libs/libcuda.so.1 || true
-
-echo
-echo "===== gcc version ====="
-which gcc
-gcc --version | head -n 1
 
 cat > "$RUN_DIR/check_libcuda.c" <<'C'
 #include <stdio.h>
@@ -770,8 +721,8 @@ int main() {
 }
 C
 
-echo
-echo "===== compiling libcuda link test ====="
+ls -l "$RUN_DIR/check_libcuda.c"
+
 gcc "$RUN_DIR/check_libcuda.c" \
   -L/.singularity.d/libs \
   -Wl,-rpath,/.singularity.d/libs \
@@ -779,23 +730,5 @@ gcc "$RUN_DIR/check_libcuda.c" \
   -o "$RUN_DIR/check_libcuda" \
   -v
 
-echo
-echo "===== running libcuda link test ====="
 "$RUN_DIR/check_libcuda"
 echo "libcuda link test OK"
-
-
-
-singularity exec --nv \
-  --bind /dataset:/dataset \
-  --bind "$HOME/envs:$HOME/envs" \
-  --bind "$HOME/python:$HOME/python" \
-  /software/containers/singularity/epile/epile.sif \
-  bash -lc '
-    which gcc
-    gcc --version | head -n 1
-    echo "cc1 path from gcc:"
-    gcc -print-prog-name=cc1
-    echo "find cc1:"
-    find /usr/lib/gcc /opt /software -name cc1 2>/dev/null | head -n 20
-  '

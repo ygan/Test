@@ -740,3 +740,46 @@ print("TRITON JIT OK")
 PY
 
 python /tmp/triton_jit_test.py
+
+
+
+echo "===== debug libcuda / gcc link ====="
+echo "RUN_DIR=$RUN_DIR"
+echo "CUDA_HOME=${CUDA_HOME:-}"
+echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+
+echo
+echo "===== libcuda files ====="
+ls -l /.singularity.d/libs/libcuda.so* || true
+readlink -f /.singularity.d/libs/libcuda.so.1 || true
+
+echo
+echo "===== gcc version ====="
+which gcc
+gcc --version | head -n 1
+
+cat > "$RUN_DIR/check_libcuda.c" <<'C'
+#include <stdio.h>
+
+extern int cuInit(unsigned int Flags);
+
+int main() {
+    int r = cuInit(0);
+    printf("cuInit returned %d\n", r);
+    return 0;
+}
+C
+
+echo
+echo "===== compiling libcuda link test ====="
+gcc "$RUN_DIR/check_libcuda.c" \
+  -L/.singularity.d/libs \
+  -Wl,-rpath,/.singularity.d/libs \
+  -l:libcuda.so.1 \
+  -o "$RUN_DIR/check_libcuda" \
+  -v
+
+echo
+echo "===== running libcuda link test ====="
+"$RUN_DIR/check_libcuda"
+echo "libcuda link test OK"

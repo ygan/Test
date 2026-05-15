@@ -676,6 +676,38 @@ singularity exec /software/containers/singularity/epile/epile.sif python --versi
 VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0 vllm serve /home/3059733@eeecs.qub.ac.uk/models/Qwen3.6-27B-FP8   --served-model-name qwen3.6   --trust-remote-code   --dtype auto   --max-model-len 256   --gpu-memory-utilization 0.95   --kv-cache-dtype fp8   --max-num-seqs 1   --max-num-batched-tokens 256   --limit-mm-per-prompt '{"image":0,"video":0}'   --language-model-only   --reasoning-parser qwen3   --default-chat-template-kwargs '{"enable_thinking": false}'   --attention-backend TRITON_ATTN    --host 127.0.0.1   --port 8000   2>&1 | tee vllm-test-startup.log
 
 
+
+
+
+
+
+SCRATCH_BASE="${SLURM_TMPDIR:-${TMPDIR:-$HOME/job_scratch}}"
+RUN_ID="${SLURM_JOB_ID:-manual}_$$"
+RUN_DIR="${SCRATCH_BASE}/${USER:-user}_vllm_dsv4_${RUN_ID}"
+
+mkdir -p "$RUN_DIR"/{tmp,rpc,cache,triton,torchinductor,cuda_cache,deep_gemm}
+
+export TMPDIR="$RUN_DIR/tmp"
+export TMP="$TMPDIR"
+export TEMP="$TMPDIR"
+
+export VLLM_RPC_BASE_PATH="$RUN_DIR/rpc"
+export VLLM_CACHE_ROOT="$RUN_DIR/cache"
+
+export XDG_CACHE_HOME="$RUN_DIR/cache"
+export TRITON_CACHE_DIR="$RUN_DIR/triton"
+export TORCHINDUCTOR_CACHE_DIR="$RUN_DIR/torchinductor"
+export CUDA_CACHE_PATH="$RUN_DIR/cuda_cache"
+export DG_JIT_CACHE_DIR="$RUN_DIR/deep_gemm"
+
+export LD_LIBRARY_PATH="/.singularity.d/libs:${LD_LIBRARY_PATH:-}"
+
+echo "RUN_DIR=$RUN_DIR"
+echo "TMPDIR=$TMPDIR"
+echo "TRITON_CACHE_DIR=$TRITON_CACHE_DIR"
+echo "TORCHINDUCTOR_CACHE_DIR=$TORCHINDUCTOR_CACHE_DIR"
+echo "CUDA_CACHE_PATH=$CUDA_CACHE_PATH"
+echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 cat > /tmp/triton_jit_test.py <<'PY'
 import os
 import torch

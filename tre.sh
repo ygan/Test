@@ -783,3 +783,19 @@ echo
 echo "===== running libcuda link test ====="
 "$RUN_DIR/check_libcuda"
 echo "libcuda link test OK"
+
+
+
+singularity exec --nv \
+  --bind /dataset:/dataset \
+  --bind "$HOME/envs:$HOME/envs" \
+  --bind "$HOME/python:$HOME/python" \
+  /software/containers/singularity/epile/epile.sif \
+  bash -lc '
+    which gcc
+    gcc --version | head -n 1
+    echo "cc1 path from gcc:"
+    gcc -print-prog-name=cc1
+    echo "find cc1:"
+    find /usr/lib/gcc /opt /software -name cc1 2>/dev/null | head -n 20
+  '

@@ -732,3 +732,24 @@ gcc "$RUN_DIR/check_libcuda.c" \
 
 "$RUN_DIR/check_libcuda"
 echo "libcuda link test OK"
+
+
+
+
+echo "which nvcc: $(which nvcc)"
+nvcc -V || true
+
+echo "CUDA_HOME=$CUDA_HOME"
+echo "CUDA_PATH=$CUDA_PATH"
+echo "PATH=$PATH" | tr ':' '\n' | grep -i cuda || true
+echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" | tr ':' '\n' | grep -i cuda || true
+
+python - <<'PY'
+import os, torch
+from torch.utils.cpp_extension import CUDA_HOME
+print("torch:", torch.__version__)
+print("torch.version.cuda:", torch.version.cuda)
+print("torch cpp_extension CUDA_HOME:", CUDA_HOME)
+print("env CUDA_HOME:", os.environ.get("CUDA_HOME"))
+print("env CUDA_PATH:", os.environ.get("CUDA_PATH"))
+PY

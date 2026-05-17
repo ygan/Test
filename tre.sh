@@ -753,3 +753,22 @@ print("torch cpp_extension CUDA_HOME:", CUDA_HOME)
 print("env CUDA_HOME:", os.environ.get("CUDA_HOME"))
 print("env CUDA_PATH:", os.environ.get("CUDA_PATH"))
 PY
+
+
+export NCCL_DEBUG=INFO
+export NCCL_DEBUG_SUBSYS=INIT,GRAPH,COLL,SHM,P2P
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+monitor() {
+  while true; do
+    echo "===== $(date) ====="
+    hostname
+    echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+    nvidia-smi
+    df -h /dev/shm
+    free -h
+    ps -o pid,ppid,stat,etime,pcpu,pmem,cmd -fu "$USER" | grep -E "vllm|python|singularity|apptainer" | grep -v grep || true
+    sleep 60
+  done
+}
+
+monitor > job_scratch/monitor_uu.log 2>&1 &

@@ -10,7 +10,7 @@ messages = [
 ]
 
 resp = client.chat.completions.create(
-    model="deepseek-ai/DeepSeek-V4-Flash",
+    model="deepseek-v4-flash",
     messages=messages,
     max_completion_tokens=2048,
     extra_body={
@@ -25,4 +25,5 @@ msg = resp.choices[0].message
 
 print("reasoning:", getattr(msg, "reasoning", None))
 print("reasoning_content:", getattr(msg, "reasoning_content", None))
+print("model_extra:", getattr(msg, "model_extra", None))
 print("content:", msg.content)

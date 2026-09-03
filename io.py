@@ -1,70 +1,90 @@
-"""Strict JSONL input and atomic output helpers."""
+"""Export operational Gan results in LLaMA Factory prediction format.
+
+Each successful input row becomes one JSONL row containing only the public Gan
+answer under LLaMA Factory's lowercase ``predict`` key.
+
+Usage:
+
+    python export_llamafactory_predictions.py \
+        --input predictions.jsonl \
+        --output generated_predictions.jsonl
+"""
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 
-@dataclass(frozen=True)
-class InputNote:
-    note_id: str
-    text: str
+def _read_jsonl(path: Path) -> list[tuple[int, Any]]:
+    rows: list[tuple[int, Any]] = []
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        if not line.strip():
+            continue
+        try:
+            rows.append((line_number, json.loads(line)))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{path}:{line_number}: invalid JSON: {exc.msg}") from exc
+    if not rows:
+        raise ValueError(f"{path}: no prediction rows found")
+    return rows
 
 
-def read_notes(path: Path) -> list[InputNote]:
-    content = path.read_text(encoding="utf-8")
-    if not content.strip():
-        raise ValueError(f"{path}: no input notes found")
-
-    rows: list[tuple[int, Any]]
-    try:
-        document = json.loads(content)
-    except json.JSONDecodeError:
-        rows = []
-        for line_number, line in enumerate(content.splitlines(), start=1):
-            if not line.strip():
-                continue
-            try:
-                rows.append((line_number, json.loads(line)))
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{path}:{line_number}: invalid JSON: {exc.msg}") from exc
-    else:
-        if isinstance(document, list):
-            rows = list(enumerate(document, start=1))
-        else:
-            rows = [(1, document)]
-
-    notes: list[InputNote] = []
-    seen: set[str] = set()
-    for record_number, row in rows:
+def export_predictions(input_path: Path, output_path: Path) -> int:
+    exported: list[dict[str, str]] = []
+    for line_number, row in _read_jsonl(input_path):
         if not isinstance(row, Mapping):
-            raise ValueError(f"{path}:{record_number}: each row must be a JSON object")
-        note_id = str(row.get("id", "")).strip() or f"note_{record_number}"
-        text = str(row.get("text", "")).strip() or str(row.get("test", "")).strip()
-        if not text:
+            raise ValueError(f"{input_path}:{line_number}: row must be a JSON object")
+        if row.get("status") != "ok":
             raise ValueError(
-                f"{path}:{record_number}: non-empty 'text' or 'test' is required"
+                f"{input_path}:{line_number}: cannot export row with status "
+                f"{row.get('status')!r}"
             )
-        if note_id in seen:
-            raise ValueError(f"{path}:{record_number}: duplicate id {note_id!r}")
-        seen.add(note_id)
-        notes.append(InputNote(note_id=note_id, text=text))
-    if not notes:
-        raise ValueError(f"{path}: no input notes found")
-    return notes
+        prediction = row.get("prediction")
+        if not isinstance(prediction, Mapping):
+            raise ValueError(f"{input_path}:{line_number}: missing prediction object")
+        final_answer = prediction.get("seizure_frequency")
+        if not isinstance(final_answer, str) or not final_answer.strip():
+            raise ValueError(
+                f"{input_path}:{line_number}: missing prediction.seizure_frequency"
+            )
+        exported.append({"predict": final_answer})
 
-
-def write_jsonl_atomic(rows: Sequence[Mapping[str, Any]], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.tmp")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output_path.with_name(f".{output_path.name}.tmp")
     with temporary.open("w", encoding="utf-8", newline="\n") as handle:
-        for row in rows:
-            handle.write(json.dumps(dict(row), ensure_ascii=False, sort_keys=True) + "\n")
+        for row in exported:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
-    os.replace(temporary, path)
+    os.replace(temporary, output_path)
+    return len(exported)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", type=Path, required=True, help="Gan output JSONL")
+    parser.add_argument(
+        "--output", type=Path, required=True, help="LLaMA Factory-style output JSONL"
+    )
+    parser.add_argument("--overwrite", action="store_true")
+    args = parser.parse_args()
+
+    if args.output.exists() and not args.overwrite:
+        parser.error(f"output already exists; pass --overwrite to replace it: {args.output}")
+    try:
+        count = export_predictions(args.input, args.output)
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
+    print(json.dumps({"rows": count, "output": str(args.output)}))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

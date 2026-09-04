@@ -23,5 +23,5 @@ def download_model_all(
     print(f"Model downloaded to: {local_path}")
     return local_path
 
-
+# ENTAlzHyzETzgCtJnHxcEAQyXXoAJDP
 download_model_all("deepseek-ai/DeepSeek-V4-Flash-0731")

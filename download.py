@@ -3,7 +3,7 @@ from huggingface_hub import snapshot_download
 
 def download_model_all(
     model_id: str,
-    base_dir: str = "~/models",
+    base_dir: str = "models/",
     revision: str = "main",
     token: bool = True,
     force_download: bool = False,
@@ -24,4 +24,4 @@ def download_model_all(
     return local_path
 
 
-download_model_all("google/gemma-3-4b-it")
+download_model_all("deepseek-ai/DeepSeek-V4-Flash-0731")

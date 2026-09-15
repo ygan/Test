@@ -795,3 +795,22 @@ curl -v -L \
   --max-time 30 \
   "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731/resolve/main/model-00004-of-00048.safetensors" \
   -o /dev/null
+
+
+curl -sS -D - -o /dev/null \
+  --cacert /etc/ssl/certs/ca-certificates.crt \
+  "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731/resolve/main/model-00004-of-00048.safetensors" \
+  | grep -iE '^(HTTP/|location:)'
+
+openssl s_client \
+  -proxy tre-proxy.er.kcl.ac.uk:3128 \
+  -connect us.aws.cdn.hf.co:443 \
+  -servername us.aws.cdn.hf.co \
+  </dev/null 2>/dev/null \
+  | openssl x509 -noout -subject -issuer -ext subjectAltName
+
+curl -vk \
+  --range 0-0 \
+  --max-time 30 \
+  "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731/resolve/main/model-00004-of-00048.safetensors" \
+  -o /dev/null

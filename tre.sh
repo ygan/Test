@@ -814,3 +814,11 @@ curl -vk \
   --max-time 30 \
   "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731/resolve/main/model-00004-of-00048.safetensors" \
   -o /dev/null
+
+
+curl -sS -k -L \
+  --range 0-0 \
+  --max-time 30 \
+  -o /dev/null \
+  -w '\nHTTP=%{http_code}\nBYTES=%{size_download}\n' \
+  "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731/resolve/main/model-00004-of-00048.safetensors"

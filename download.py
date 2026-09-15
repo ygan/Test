@@ -28,7 +28,13 @@
 
 import os
 
-# 必须尽量放在 import huggingface_hub 之前
+CERT_PATH = "/etc/ssl/certs/ca-certificates.crt"
+
+os.environ["SSL_CERT_FILE"] = CERT_PATH
+os.environ["REQUESTS_CA_BUNDLE"] = CERT_PATH
+os.environ["CURL_CA_BUNDLE"] = CERT_PATH
+
+# Hugging Face settings
 os.environ["HF_HUB_DISABLE_XET"] = "1"
 os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "300"
 
@@ -38,7 +44,7 @@ from huggingface_hub import snapshot_download
 
 def download_model_all(
     model_id: str,
-    base_dir: str = "models/",
+    base_dir: str = "/dataset/models/",
     revision: str = "main",
     token: bool = True,
     force_download: bool = False,

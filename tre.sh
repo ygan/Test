@@ -772,3 +772,8 @@ monitor() {
 }
 
 monitor > job_scratch/monitor_uu.log 2>&1 &
+
+
+# export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+# export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+# export CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt

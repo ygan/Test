@@ -822,3 +822,8 @@ curl -sS -k -L \
   -o /dev/null \
   -w '\nHTTP=%{http_code}\nBYTES=%{size_download}\n' \
   "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731/resolve/main/model-00004-of-00048.safetensors"
+
+
+curl -sS -D - -o /dev/null \
+  "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731/resolve/main/model-00004-of-00048.safetensors" \
+  | grep -i '^location:'

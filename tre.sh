@@ -777,3 +777,21 @@ monitor > job_scratch/monitor_uu.log 2>&1 &
 # export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 # export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 # export CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+
+env | grep -iE '^(http|https|all|no)_proxy='
+
+curl -v -L \
+  --range 0-0 \
+  --cacert /etc/ssl/certs/ca-certificates.crt \
+  --max-time 30 \
+  "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731/resolve/main/model-00004-of-00048.safetensors" \
+  -o /dev/null
+
+
+curl -v -L \
+  --noproxy '*' \
+  --range 0-0 \
+  --cacert /etc/ssl/certs/ca-certificates.crt \
+  --max-time 30 \
+  "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731/resolve/main/model-00004-of-00048.safetensors" \
+  -o /dev/null

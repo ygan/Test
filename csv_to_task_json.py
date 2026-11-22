@@ -6,14 +6,16 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 
 def _read_records(
     path: Path, column: str, *, encoding: str, delimiter: str
-) -> list[dict[str, str]]:
+) -> tuple[list[dict[str, str]], list[int]]:
     records = []
+    empty_lines = []
     with path.open(encoding=encoding, newline="") as input_file:
         reader = csv.reader(input_file, delimiter=delimiter, strict=True)
         header = next((row for row in reader if row), [])
@@ -37,14 +39,13 @@ def _read_records(
                 )
             text = row[column_index]
             if not text.strip():
-                raise ValueError(
-                    f"CSV column {column!r} is empty at line {reader.line_num}."
-                )
+                empty_lines.append(reader.line_num)
+                continue
             records.append({"letter": text})
 
     if not records:
-        raise ValueError("The CSV contains no data records.")
-    return records
+        raise ValueError(f"CSV column {column!r} has no non-empty text.")
+    return records, empty_lines
 
 
 def _write_records(path: Path, records: list[dict[str, str]]) -> None:
@@ -71,7 +72,9 @@ def main() -> None:
     parser.add_argument(
         "--input", required=True, type=Path, help="CSV file with a header row."
     )
-    parser.add_argument("--column", required=True, help="Exact name of the text column.")
+    parser.add_argument(
+        "--column", required=True, help="Exact name of the text column. Empty cells are skipped."
+    )
     parser.add_argument(
         "--output", required=True, type=Path, help="Destination JSON file."
     )
@@ -93,13 +96,20 @@ def main() -> None:
             raise ValueError("Input and output paths must be different.")
         # The default CSV field limit can be too small for long clinical notes.
         csv.field_size_limit(2**31 - 1)
-        records = _read_records(
+        records, empty_lines = _read_records(
             args.input, args.column, encoding=args.encoding, delimiter=args.delimiter
         )
         _write_records(args.output, records)
     except (csv.Error, LookupError, OSError, ValueError) as exc:
         parser.error(str(exc))
 
+    if empty_lines:
+        line_numbers = ", ".join(map(str, empty_lines))
+        print(
+            f"Skipped {len(empty_lines)} CSV record(s) with empty {args.column!r} cells "
+            f"ending on lines {line_numbers}.",
+            file=sys.stderr,
+        )
     print(f"Wrote {len(records)} records to {args.output}")
 
 

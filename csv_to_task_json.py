@@ -126,3 +126,41 @@ if __name__ == "__main__":
 # --pipeline generated_outputs/harness_tasks/epilepsy_classification_single/versions/v001/pipeline.yaml \
 # --dataset generated_outputs/letters.json \
 # --no-eval
+
+cat > /dataset/singularity/gloo_probe.py <<'PY'
+import os
+import socket
+from datetime import timedelta
+
+import torch
+import torch.distributed as dist
+
+rank = int(os.environ["RANK"])
+
+print(
+    f"Rank={rank}, Host={socket.gethostname()}, "
+    f"IFACE={os.getenv('GLOO_SOCKET_IFNAME')}",
+    flush=True
+)
+
+dist.init_process_group(
+    backend="gloo",
+    timeout=timedelta(seconds=40)
+)
+
+x = torch.tensor([float(rank + 1)])
+dist.all_reduce(x)
+dist.barrier()
+
+print(f"GLOO SUCCESS: rank={rank}, sum={x.item()}", flush=True)
+
+dist.destroy_process_group()
+PY
+
+export GLOO_SOCKET_IFNAME=lo
+
+python -m torch.distributed.run \
+    --standalone \
+    --nnodes=1 \
+    --nproc_per_node=4 \
+    /dataset/singularity/gloo_probe.py

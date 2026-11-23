@@ -261,3 +261,27 @@ client.wait(timeout=10)
 print("Client exit code:", client.returncode)
 server.close()
 PY
+
+
+
+
+
+
+
+import socket
+
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+s.listen(1)
+
+port = s.getsockname()[1]
+print("Server listening:", port, flush=True)
+
+c = socket.create_connection(("127.0.0.1", port), timeout=5)
+conn, addr = s.accept()
+
+print("TCP LOOPBACK SUCCESS", flush=True)
+
+c.close()
+conn.close()
+s.close()

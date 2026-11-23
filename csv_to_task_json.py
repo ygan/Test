@@ -164,3 +164,60 @@ python -m torch.distributed.run \
     --nnodes=1 \
     --nproc_per_node=4 \
     /dataset/singularity/gloo_probe.py
+
+
+cat > /dataset/singularity/check_gloo.py <<'PY'
+import os
+import time
+import tempfile
+import multiprocessing as mp
+from datetime import timedelta
+
+import torch
+import torch.distributed as dist
+
+def worker(rank, path):
+    print(f"Rank {rank}: starting", flush=True)
+
+    dist.init_process_group(
+        backend="gloo",
+        init_method=f"file://{path}",
+        rank=rank,
+        world_size=4,
+        timeout=timedelta(seconds=25),
+    )
+
+    x = torch.tensor([float(rank + 1)])
+    dist.all_reduce(x)
+
+    print(f"Rank {rank}: GLOO OK, sum={x.item()}", flush=True)
+    dist.destroy_process_group()
+
+if __name__ == "__main__":
+    os.environ["GLOO_SOCKET_IFNAME"] = "lo"
+
+    with tempfile.TemporaryDirectory(dir="/tmp") as d:
+        path = os.path.join(d, "rendezvous")
+
+        ctx = mp.get_context("spawn")
+        workers = [
+            ctx.Process(target=worker, args=(i, path))
+            for i in range(4)
+        ]
+
+        for p in workers:
+            p.start()
+
+        deadline = time.monotonic() + 40
+        for p in workers:
+            p.join(max(0, deadline - time.monotonic()))
+
+        for p in workers:
+            if p.is_alive():
+                p.terminate()
+                p.join()
+
+        print("Exit codes:", [p.exitcode for p in workers])
+PY
+
+timeout 60s python -u /dataset/singularity/check_gloo.py

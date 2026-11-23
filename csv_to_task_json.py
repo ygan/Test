@@ -221,3 +221,43 @@ if __name__ == "__main__":
 PY
 
 timeout 60s python -u /dataset/singularity/check_gloo.py
+
+
+python -u - <<'PY'
+import socket
+import subprocess
+import sys
+
+server = socket.socket()
+server.bind(("127.0.0.1", 0))
+server.listen(1)
+server.settimeout(10)
+
+port = server.getsockname()[1]
+print("Listening on:", port, flush=True)
+
+client = subprocess.Popen([
+    sys.executable, "-c",
+    """
+import socket, sys
+s = socket.create_connection(
+    ('127.0.0.1', int(sys.argv[1])), timeout=5
+)
+s.sendall(b'HELLO')
+s.close()
+print('CLIENT SUCCESS')
+""",
+    str(port)
+])
+
+try:
+    conn, addr = server.accept()
+    print("SERVER SUCCESS:", conn.recv(100), flush=True)
+    conn.close()
+except Exception as e:
+    print("SERVER FAILED:", repr(e), flush=True)
+
+client.wait(timeout=10)
+print("Client exit code:", client.returncode)
+server.close()
+PY
